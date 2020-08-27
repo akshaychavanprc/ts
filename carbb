@@ -1,0 +1,404 @@
+exports = module.exports = {}
+
+try
+	shared = require('/opt/goldrush-worker/shared')
+	#require('coffee-script')
+	#shared = require('./shared')
+	HashMap = require('hashmap')
+	# fs = require('fs')
+catch e
+	console.error e.message, if e.code == 'MODULE_NOT_FOUND' then 'please install it (npm install module_name)' else ''
+	process.exit e.code
+
+urlList = {}		# URL List for Deep URL List
+totalHash = new HashMap()
+
+
+## --------- sku_history ----------
+sku_history = (details) ->
+	deferred = shared.q.defer()
+	#Establishing Redis Connection
+	client = shared.redis.createClient()
+	client.on 'error', (err) ->
+		console.log 'Error ' + err
+		return
+
+	#Establishing Redis Connection
+	common_client = shared.redis.createClient(shared.common_redisConfig.port, shared.common_redisConfig.IP)
+	common_client.on 'error', (err) ->
+		console.log 'Error ' + err
+		return
+	priceNow=details.priceNow
+	priceWas=details.priceWas
+	index1 = details.index
+
+	length=Object.keys(details.colors).length
+	#Defining machine detail
+	machine_detail={}
+	machine_detail['IP']=shared.ip.address()+":"+shared.process.pid
+	machine_detail['retailer_group_name']=shared.retailer.retailer_group_name
+	machine_detail['Type']="HTML"
+	machine_detail['URL']="SKU"
+	machine_detail['Lable']="detail"
+	# shared.auth['proxy']=shared.retailer.proxy_detail
+	shared.auth['proxy']="http://lum-customer-merit-zone-unblocker_adidas_de:dzilah9edcds@zproxy.luminati.io:22225"
+	shared.auth['rejectUnauthorized']=false
+	shared.auth['headers']['Authority']='www.adidas.de'
+	shared.auth['headers']['Accept-Encoding']='gzip, deflate, br'
+	shared.auth['headers']['accept']='text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9'
+	shared.auth['headers']['Accept-Language']='en-US,en;q=0.9'
+	shared.auth['headers']['User-Agent']='Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 Safari/537.36'
+
+	if(length == 0)
+		deferred.resolve details
+
+	Object.keys(details.colors).forEach (color) ->
+		sku_url=details.colors[color][0]
+		md5_file_name=details.colors[color][1]
+		shared.auth['url']=sku_url
+		auth_string=JSON.stringify(shared.auth)
+		machine_detail_string=JSON.stringify(machine_detail)
+		push_string=auth_string + shared.splitter + machine_detail_string
+		#Sku urls push into Redis List
+		shared.common_client.select 1, (err) ->
+			shared.common_client.rpush shared.retailer.retailer_code, push_string
+			return
+		return
+
+	#Collects Sku and image based on color
+	skus = (color,doneCallback) ->
+		details=@details
+		sku_url=details.colors[color][0]
+		md5_file_name=details.colors[color][1]
+		priceNow=details.colors[color][2]
+		priceWas=details.colors[color][3]
+		image_url=details.colors[color][4]
+		console.log "----------- SKU -----------"
+		console.log md5_file_name+"--- sku_url :: "+sku_url
+		interval_count=0
+		sku_history_detail  = ->
+			interval_count++
+			console.log("interval_count::"+interval_count)
+			if(interval_count > 25)
+				clearInterval(intervalId)
+				doneCallback(null, details)
+			shared.getmd5(md5_file_name,shared.retailer.retailer_code).then((data2) ->
+				# clearInterval(intervalId)
+				if data2
+					clearInterval(intervalId)
+					if(data2 == "ERR")
+						doneCallback(null, null)
+					data2 = data2.replace(/\\"/ig,'"')
+					Json_data = shared.json_converter(data2)
+
+					image_url = image_url.toString()
+					priceNow = priceNow.toString()
+					priceWas = priceWas.toString()
+
+					Object.keys(Json_data['variation_list']).forEach (ids) ->
+						size = Json_data['variation_list'][ids]['size']
+						stock_status = Json_data['variation_list'][ids]['availability_status']
+						if !stock_status.match(/not_available|sold|unavailable/ig)
+							stock = true
+							console.log "---- color :: "+color+"---- size :: "+size+"---- stock :: "+stock+"---- priceNow :: "+priceNow+"---- priceWas :: "+priceWas
+							console.log "---- image_url :: "+image_url
+
+							sku=''
+							details.skuHistory[index1] = [
+								sku
+								entities = [
+									["color", color],
+									["size" , size]
+								]
+								images =
+									large: image_url
+								priceNow
+								priceWas
+								stock
+							]
+							index1++
+							return
+					doneCallback(null, details)
+				else
+					return
+			)
+		intervalId = setInterval(sku_history_detail, 1500)
+
+	shared.async.mapSeries Object.keys(details.colors), skus.bind(details:details), (err, results) ->
+		# console.log "details :: "+JSON.stringify(details)
+		# process.exit 0
+		deferred.resolve details
+		client.quit()
+		common_client.quit()
+		return
+
+	deferred.promise
+
+## --------- sku_history_1----------
+sku_history_1 = (details) ->
+	deferred = shared.q.defer()
+	#Establishing Redis Connection
+	client = shared.redis.createClient()
+	client.on 'error', (err) ->
+		console.log 'Error ' + err
+		return
+
+	#Establishing Redis Connection
+	common_client = shared.redis.createClient(shared.common_redisConfig.port, shared.common_redisConfig.IP)
+	common_client.on 'error', (err) ->
+		console.log 'Error ' + err
+		return
+	index1 = details.index
+
+	length=Object.keys(details.colors).length
+	#Defining machine detail
+	machine_detail={}
+	machine_detail['IP']=shared.ip.address()+":"+shared.process.pid
+	machine_detail['retailer_group_name']=shared.retailer.retailer_group_name
+	machine_detail['Type']="HTML"
+	machine_detail['URL']="SKU"
+	machine_detail['Lable']="detail"
+	# shared.auth['proxy']=shared.retailer.proxy_detail
+	shared.auth['proxy']="http://lum-customer-merit-zone-unblocker_adidas_de:dzilah9edcds@zproxy.luminati.io:22225"
+	shared.auth['rejectUnauthorized']=false
+	shared.auth['headers']['Authority']='www.adidas.de'
+	shared.auth['headers']['Accept-Encoding']='gzip, deflate, br'
+	shared.auth['headers']['accept']='text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9'
+	shared.auth['headers']['Accept-Language']='en-US,en;q=0.9'
+	shared.auth['headers']['User-Agent']='Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 Safari/537.36'
+
+	if(length == 0)
+		deferred.resolve details
+
+	Object.keys(details.colors).forEach (color) ->
+		sku_url=details.colors[color][0]
+		md5_file_name=details.colors[color][1]
+		console.log "---------------- SKU 01 ---------------------"
+		shared.auth['url']=sku_url
+		auth_string=JSON.stringify(shared.auth)
+		machine_detail_string=JSON.stringify(machine_detail)
+		push_string=auth_string + shared.splitter + machine_detail_string
+		#Sku urls push into Redis List
+		shared.common_client.select 1, (err) ->
+			shared.common_client.rpush shared.retailer.retailer_code, push_string
+			return
+		return
+
+	#Collects Sku and image based on color
+	skus = (color,doneCallback) ->
+		details=@details
+		sku_url=details.colors[color][0]
+		md5_file_name=details.colors[color][1]
+		priceNow = details.product['priceNow']
+		priceWas = details.product['priceWas']
+		image_url = details.product['image_filename']
+		interval_count=0
+		sku_history_detail  = ->
+			interval_count++
+			console.log("interval_count::"+interval_count)
+			if(interval_count > 25)
+				clearInterval(intervalId)
+				doneCallback(null, details)
+			# shared.getmd5(md5_file_name).then((data) ->
+			shared.getmd5(md5_file_name,shared.retailer.retailer_code).then((data1) ->
+				# clearInterval(intervalId)
+				if data1
+					clearInterval(intervalId)
+					console.log md5_file_name+' :: '+sku_url
+					if(data1 == "ERR")
+						doneCallback(null, null)
+					if(data1.match(/errorCode/i))
+						doneCallback(null, details)
+					details.md5_files[md5_file_name]=md5_file_name
+					$ = shared.cheerio.load(data1)
+					if ($('.price___2HdoY.price___2HdoY .gl-price__value.gl-price__value--crossed').html())
+						priceWas = $('.price___2HdoY.price___2HdoY .gl-price__value.gl-price__value--crossed').html().replace(',','.')
+					if($('.price___2HdoY.price___2HdoY .gl-price__value.gl-price__value--sale').html())
+						priceNow=$('.price___2HdoY.price___2HdoY .gl-price__value.gl-price__value--sale').html().replace(',','.')
+						if(priceWas=='')
+							pricewas=priceNow
+					if(priceNow=='' || priceNow==null)
+						priceNow = $('.price___2HdoY.price___2HdoY .gl-price__value').html().replace(',','.')
+						priceWas = priceNow
+					price_text = priceNow+' '+priceWas
+
+					image_url = $('[id="meta-og-image"]').attr('content')
+					console.log "image_url :: "+image_url
+
+					sku_id = sku_url.match(/\/([\w]*?)\.html/i)[1]
+					size_url = 'https://www.adidas.de/api/products/tf/'+sku_id+'/availability'
+					console.log "--- size_url :: "+size_url
+					size_md5 = shared.crypto.createHash('md5').update(size_url).digest('hex').toUpperCase()
+					console.log "--- size_md5 :: "+size_md5
+
+					details.colors[color]=[size_url]
+					details.colors[color][1]=[size_md5]
+					details.colors[color][2]=[priceNow]
+					details.colors[color][3]=[priceWas]
+					details.colors[color][4]=[image_url]
+
+					doneCallback(null, details)
+				else
+					return
+			)
+		intervalId = setInterval(sku_history_detail, 1500)
+
+	shared.async.mapSeries Object.keys(details.colors), skus.bind(details:details), (err, results) ->
+		deferred.resolve details
+		client.quit()
+		common_client.quit()
+		return
+
+	deferred.promise
+
+# //____________________________________________________________________________________
+# /**
+#  * @desc This function will scrap the product url and call shared.addProductDetailsToDatabase
+#  * ***** If the product exist we just add sku history if there is a change in price or stock.
+#  * @param URLs list URL's obtained from redis key web site url.
+#  * @return data saved in mysql.
+#  */
+# @scrapeTheProducts : this function collects product name,brand,price and detail
+
+exports.scrapeTheProducts = (URLs, md5_file_name, done) ->
+	deferred = shared.q.defer()
+	index1=0
+	base_url=shared.retailer.retailer_website_url.replace(/\/$/ig,'')
+	index = 0
+	isEmptyObject = (obj) ->
+		!Object.keys(obj).length
+	#Establishing Redis Connection
+	common_client = shared.redis.createClient(shared.common_redisConfig.port, shared.common_redisConfig.IP)
+	common_client.on 'error', (err) ->
+		console.log 'Error ' + err
+		return
+	getProductDetailsFromRedis = (url,doneCallback) ->
+		console.log(md5_file_name+" --- "+url)
+		index++
+		setTimeout (->
+			#To get content of md5_file_name from redis
+			# shared.getmd5(md5_file_name).then((data) ->
+			shared.getmd5(md5_file_name,shared.retailer.retailer_code).then((data) ->
+				if data
+					console.log "--------- Data ----------"
+					$ = shared.cheerio.load(data)
+
+					details =
+						product: {}
+						skuHistory: {}
+						colors:{}
+						images: {}
+						product_categories: {}
+						product_facet: {}
+						retailer_locale_id:false
+						taxonomies: []
+						md5_files:[]
+
+					# To collect style,product code , name
+					details.md5_files[md5_file_name]=md5_file_name
+
+					productCode = data.match(/\\\"model_number\\\"\s*\:\s*\\\"([^>]*?)\\\"/i)[1]
+					console.log "productCode :: "+productCode
+					unless productCode
+						doneCallback(null, null)
+
+					productName = $('[data-auto-id="product-title"]').eq(0).text().trim()
+					console.log("productName :: "+productName)
+					unless productName
+						doneCallback(null, null)
+
+					brand = ''
+					if data.match(/\\"attribute_list\\"\s*\:\s*\{[^>]*?\\"brand\\"\s*:\s*\\"([^>]*?)\\"/i)[1]
+						brand = data.match(/\\"attribute_list\\"\s*\:\s*\{[^>]*?\\"brand\\"\s*:\s*\\"([^>]*?)\\"/i)[1]
+					console.log "brand :: "+brand
+
+					productDesciption = ''
+					if $('[id="navigation-target-description"]').text()
+						productDesciption = $('[id="navigation-target-description"]').text().trim()
+					productDesciption = productDesciption.replace(/\s+/ig,' ')
+					productDesciption = shared.entities.decodeHTML(productDesciption)
+					console.log "productDesciption :: "+productDesciption
+
+					prod_detail = ''
+					if $('[id="navigation-target-specifications"]').html()
+						prod_detail = $('[id="navigation-target-specifications"]').html()
+					prod_detail = prod_detail.replace(/\s*<[^>]*?>\s*|\s*\s\s*/ig,' ')
+					prod_detail = shared.entities.decodeHTML(prod_detail)
+					console.log "prod_detail :: "+prod_detail
+
+					image_url = ''
+					if $('[id="meta-og-image"]').attr('content')
+						image_url = $('[id="meta-og-image"]').attr('content')
+					console.log "Default_image :: "+image_url
+
+					priceNow=''
+					priceWas=''
+					if ($('.price___2HdoY.price___2HdoY .gl-price__value.gl-price__value--crossed').html())
+						priceWas = $('.price___2HdoY.price___2HdoY .gl-price__value.gl-price__value--crossed').html().replace(',','.')
+					if($('.price___2HdoY.price___2HdoY .gl-price__value.gl-price__value--sale').html())
+						priceNow=$('.price___2HdoY.price___2HdoY .gl-price__value.gl-price__value--sale').html().replace(',','.')
+						if(priceWas=='')
+							pricewas=priceNow
+					if(priceNow=='' || priceNow==null)
+						priceNow = $('.price___2HdoY.price___2HdoY .gl-price__value').html().replace(',','.')
+						priceWas = priceNow
+					price_text = priceNow+' '+priceWas
+
+					details.base_url=base_url
+					details['price_text'] = price_text
+					# Fill the product objects with the details information collected in the earlier step
+					details['retailer_locale_id'] = shared.retailer.retailer_locale_id
+					details.product['product_gold_key'] = productCode
+					details.product['retailer_id'] = shared.retailer.retailer_id
+					details.product['product_url'] = url
+					details.product['name'] = productName
+					details.product['description_overview'] = productDesciption
+					details.product['description_details'] = prod_detail
+					details.product['brand'] = brand
+					details.product['image_filename'] = image_url
+					details.product['priceNow'] = priceNow
+					details.product['priceWas'] = priceWas
+
+
+					if $('[class="slider___2Fr98"]').find('a[class^="variation"]').attr()
+						console.log "------------ Multi Color ------------"
+						$('[class="slider___2Fr98"]').find('a[class^="variation"]').each (index,el) ->
+							color = $(el).attr('title')
+							sku_url = 'https://www.adidas.de'+($(el).attr('href'))
+							console.log "--- color :: "+color+' --- '+sku_url
+							sku_md5=shared.crypto.createHash('md5').update(sku_url).digest('hex').toUpperCase()
+							details.colors[color]=[sku_url]
+							details.colors[color][1]=[sku_md5]
+					else
+						console.log "------------ Single ------------"
+						color = $('[class^="color-and-price"]').eq(0).find('.gl-label').text()
+						sku_url = url
+						sku_md5=shared.crypto.createHash('md5').update(sku_url).digest('hex').toUpperCase()
+						console.log "--- color :: "+color+' --- '+sku_url
+						details.colors[color]=[sku_url]
+						details.colors[color][1]=[sku_md5]
+
+					details.index=index1
+					deferred.resolve details
+					deferred.promise
+
+			)
+			.then(sku_history_1)
+			.then(sku_history)
+			.then(shared.addProductDetailsToDatabase)
+			.then(doneCallback)
+		), 5000
+		return
+
+	shared.async.map URLs, getProductDetailsFromRedis, (err, results) ->
+		if(results[0] == null)
+			console.log('collection failed')
+			done(new Error('collection failed'))
+			common_client.quit()
+		else
+			common_client.quit()
+			done()
+
+		deferred.resolve 'done'
+		return
+	deferred.promise
